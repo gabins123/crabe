@@ -1,6 +1,6 @@
 use anyhow::Ok;
 
-use crossterm::{cursor, event::{self, read, Event}, ExecutableCommand, QueueableCommand};
+use crossterm::{cursor, event::{self, read, Event}, style::{Color, PrintStyledContent, Stylize}, ExecutableCommand, QueueableCommand};
 use crossterm::style::Print;
 use crossterm::terminal::{self, Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen};
 
@@ -15,12 +15,14 @@ enum Action {
     InsertChar(char),
 }
 
+#[derive(Debug)]
 enum Mode {
     Normal,
     Insert,
 }
 
 pub struct Editor {
+    size: (u16, u16),
     cx: usize,
     cy: usize,
     mode: Mode,
@@ -38,19 +40,20 @@ impl Editor {
             .execute(Clear(ClearType::All))?;
 
         Ok(Editor{
+            size: terminal::size()?,
             cx: 0,
             cy: 0,
             mode: Mode::Normal,
             stdout: stdout,
         })
     }
-  
     pub fn run(&mut self) -> anyhow::Result<()> {
       
         loop {
+            self.draw_status_line()?;
             self.stdout.queue(cursor::MoveTo(self.cx as u16, self.cy as u16))?;
             self.stdout.flush()?;
-
+            
             if let Some(action) = self.handle_event(read()?)? {
                 match action {
                     Action::Quit => break,
@@ -70,7 +73,75 @@ impl Editor {
         terminal::disable_raw_mode()?;
         Ok(())
     }
+    fn draw_status_line(&mut self) -> anyhow::Result<()>{
+        let mode = format!(" {:?} ", self.mode).to_uppercase();
+        let file = "src/main.rs";
+        let pos = format!(" {}:{} ", self.cx, self.cy);
 
+        let file_width = self.size.0 - mode.len() as u16 - pos.len() as u16 - 2;
+
+        self.stdout.queue(cursor::MoveTo(0, self.size.1 - 2))?;
+        self.stdout.queue(PrintStyledContent(
+            mode.with(Color::Rgb { r: 0, g: 0, b: 0 })
+                .bold()
+                .on(Color::Rgb {
+                    r: 184,
+                    g: 144,
+                    b: 243,
+                }),
+        ))?;
+        self.stdout.queue(PrintStyledContent(
+            ""
+                .with(Color::Rgb {
+                    r: 184,
+                    g: 144,
+                    b: 243,
+                })
+                .on(Color::Rgb {
+                    r: 67,
+                    g: 70,
+                    b: 89,
+                }),
+        ))?;
+        self.stdout.queue(PrintStyledContent(
+            format!("{:width$}", file, width = file_width as usize)
+                .with(Color::Rgb {
+                    r: 255,
+                    g: 255,
+                    b: 255,
+                })
+                .bold()
+                .on(Color::Rgb {
+                    r: 67,
+                    g: 70,
+                    b: 89,
+                }),
+        ))?;
+        self.stdout.queue(PrintStyledContent(
+            ""
+                .with(Color::Rgb {
+                    r: 184,
+                    g: 144,
+                    b: 243,
+                })
+                .on(Color::Rgb {
+                    r: 67,
+                    g: 70,
+                    b: 89,
+                }),
+        ))?;
+        self.stdout.queue(PrintStyledContent(
+            pos.with(Color::Rgb { r: 0, g: 0, b: 0 })
+                .bold()
+                .on(Color::Rgb {
+                    r: 184,
+                    g: 144,
+                    b: 243,
+                }),
+        ))?;
+        
+        Ok(())
+    }
     fn handle_event(&self, event: Event) -> anyhow::Result<Option<Action>>{
         if matches!(self.mode, Mode::Normal) {
             self.handle_normal_event(event)
